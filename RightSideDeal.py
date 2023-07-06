@@ -141,7 +141,7 @@ class MyStrategy(bt.Strategy):
         if self.order:  # 检查是否有指令等待执行,
             return
 
-        top_stocks = self.params.data_handler.heap_top_mapping.get(self.data0.datetime.datetime(0))
+        top_stocks = self.params.data_handler.heap_top_mapping.get(self.data0.datetime.datetime(0).strftime("%Y-%m-%d"))
         hit = False
         if top_stocks is not None:
             hit = self.data._name not in [pair.key for pair in top_stocks]
@@ -205,7 +205,7 @@ class MyStrategy(bt.Strategy):
         self.log("期末总资金 %.2f" % (self.broker.getvalue()), do_print=True)
 
 
-def main(start_cash=1000000, commission_fee=0.001, start_time=datetime.datetime(2002, 4, 1), end_time=datetime.datetime(2015, 12, 31)):
+def main(start_cash=1000000, commission_fee=0.001, start_time=datetime.datetime(2020, 1, 1), end_time=datetime.datetime(2023, 6, 30)):
     print(f'加载数据...')
     data_handler = DataHandler()
     print(f'加载数据完毕，构造策略数据...')
@@ -213,12 +213,14 @@ def main(start_cash=1000000, commission_fee=0.001, start_time=datetime.datetime(
     trace_days = ak.tool_trade_date_hist_sina()
     trace_days = trace_days.rename(columns={'trade_date':'date'})
     datas = data_handler.load_stocks()
+    count = 0
     for index, stock in datas.iterrows():
         stock = stock['代码']
         stock_data = data_handler.load_stock(stock)
         full_stock_data = pd.merge(left=trace_days, right=stock_data, on='date', how='left')
         #full_stock_data.index = pd.to_datetime(full_stock_data['date'], format='%Y-%m-%d')
         full_stock_data.index = pd.to_datetime(full_stock_data['date'])
+        full_stock_data = full_stock_data[full_stock_data.index >= start_time]
         data = bt.feeds.PandasData(dataname=full_stock_data,
                                    open=1,  # 开盘价所在列
                                    high=3,  # 最高价所在列
@@ -229,7 +231,10 @@ def main(start_cash=1000000, commission_fee=0.001, start_time=datetime.datetime(
                                    todate=end_time,  # 结束日 2015, 12, 31
                                    )
         cerebro.adddata(data, name=stock)
-        break
+        count = count + 1
+        if count > 1000:
+            break
+
 
     cerebro.addstrategy(MyStrategy, data_handler=data_handler)
     cerebro.broker.setcash(start_cash)  # 设置初始资本为 100000
@@ -242,8 +247,8 @@ def main(start_cash=1000000, commission_fee=0.001, start_time=datetime.datetime(
     print(f"总资金: {round(port_value, 2)}")
     print(f"净收益: {round(pnl, 2)}")
 
-    cerebro.plot(style='candlestick')  # 画图
+    cerebro.plot(style='candlestick',volume=False)  # 画图
 
 if __name__ == '__main__':
-    main(commission_fee=0.001)
+    main(commission_fee=0.002)
 
