@@ -12,9 +12,8 @@ class ContinueRisingBot(QuantBotBase):
 
     def __init__(self, config_path: str = '~/stock', initial_amount: float = 1000000,
                  start_time: datetime = datetime.datetime(2000, 1, 1), end_time: datetime = None,
-                 stocks: list[str] = None,
-                 open_log: bool = True):
-        self.data_handler = DataHandler(use_cache=False)
+                 stocks: list[str] = None, open_log: bool = True, use_cache=True):
+        self.data_handler = DataHandler(use_cache=use_cache)
         super().__init__(self.data_handler.stock_line_mapping, config_path, initial_amount, start_time, end_time,
                          stocks, open_log)
 

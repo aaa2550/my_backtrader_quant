@@ -88,12 +88,14 @@ class QuantBotBase(ABC):
 
     # 取出当前k线所有的股票并构建一个新的pd
     def get_one_cand_stocks_data(self, cand: datetime):
-        one_day_data = pd.DataFrame()
+        one_day_data = pd.DataFrame(columns=['stock'])
+        one_day_data.set_index('stock', inplace=True)
         for stock in self.stocks:
             stock_data = self.stock_line_mapping.get(stock)
-            stock_day_data = stock_data.loc[cand]
-            stock_day_data['code'] = stock
-            one_day_data = one_day_data.append(stock_day_data, ignore_index=True)
+            one_day_data[stock] = stock_data.loc[cand] if cand in stock_data.index else None
+            #one_day_data[cand] = stock_data.loc[cand]
+            one_day_data.loc[cand, 'code'] = stock
+            #one_day_data = one_day_data.append(stock_day_data, ignore_index=True)
         return one_day_data
 
     # 执行买入
