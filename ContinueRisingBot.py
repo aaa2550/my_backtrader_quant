@@ -3,8 +3,8 @@ import datetime
 import pandas as pd
 from pandas import DataFrame
 
-from common import DataHandler
-from my_quant import QuantBotBase
+from DataHandler import DataHandler
+from QuantBotBase import QuantBotBase
 
 
 class ContinueRisingBot(QuantBotBase):

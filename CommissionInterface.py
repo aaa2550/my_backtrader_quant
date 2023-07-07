@@ -1,6 +1,6 @@
 from abc import abstractmethod, ABC
 
-from enums import SideEnum
+import SideEnum
 
 
 class CommissionInterface(ABC):

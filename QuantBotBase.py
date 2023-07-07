@@ -6,9 +6,9 @@ import akshare as ak
 import pandas as pd
 from pandas import DataFrame
 
-from common import CommissionInterface
-from common.ResultView import ResultView
-from enums import SideEnum
+import CommissionInterface
+from ResultView import ResultView
+import SideEnum
 
 
 class QuantBotBase(ABC):

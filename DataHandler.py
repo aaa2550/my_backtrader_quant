@@ -1,3 +1,4 @@
+import datetime
 import os
 import pickle
 from typing import Dict
@@ -5,7 +6,8 @@ from typing import Dict
 import pandas as pd
 from pandas import DataFrame
 
-from common.Pair import Pair
+from Pair import Pair
+from Utils import do_percent
 
 
 class DataHandler:
@@ -37,27 +39,26 @@ class DataHandler:
         print('重新构建数据...')
         datas = self.load_stocks()
 
-        # for index, stock in datas.iterrows():
-        #     stock = stock['代码']
-        #     print(stock)
-        #     data = self.load_stock(stock)
-        #     # 加一些扩展的列，比如移动均线
-        #     data = self.get_up_interval_or_extent(stock, data)
-        #     self.stock_line_mapping[stock] = data
-        #     # 计算半年内涨幅记录到每天行情
-        #     self.load_top_by_day(stock, data)
-
+        count = len(datas)
+        index = 0
+        start = datetime.datetime.now()
         for stock in datas:
-            print(stock)
+            do_percent(index, count, 'load_stock_line_mapping')
             self.load_stock_line_mapping(stock)
+            index = index + 1
 
         self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
+        print(f'load_stock_line_mapping耗时：{datetime.datetime.now() - start}秒')
+
         print(f'load_stock_line_mapping执行结束...')
 
+        start = datetime.datetime.now()
+        index = 0
         for stock in datas:
-            print(f'load_top:{stock}')
+            do_percent(index, count, 'load_top_by_day')
             data = self.stock_line_mapping.get(stock)
             self.load_top_by_day(stock, data)
+            index = index + 1
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
@@ -65,11 +66,14 @@ class DataHandler:
             self.heap_top_mapping[key] = sorted_values[:10]
 
         self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
+        print(f'load_top_by_day耗时：{datetime.datetime.now() - start}秒')
+
         print('数据构建完成...')
         # 加载到缓存
         print('数据写入缓存完成...')
 
-    def get_up_interval_or_extent(self, stock, day_data):
+    @staticmethod
+    def get_up_interval_or_extent(stock, day_data):
         day_data['5ma'] = day_data['close'].rolling(window=5, min_periods=5).mean()
         day_data['20ma'] = day_data['close'].rolling(window=20, min_periods=20).mean()
         day_data['ups'] = day_data['5ma'] > day_data['20ma']
@@ -105,21 +109,18 @@ class DataHandler:
         return day_data
 
     def load_stock_line_mapping(self, stock: str):
-        try:
-            data = self.load_stock(stock)
-            data = self.get_up_interval_or_extent(stock, data)
-            self.stock_line_mapping[stock] = data
-        except Exception as e:
-            print(repr(e))
-        finally:
-            print(stock)
+        data = self.load_stock(stock)
+        data = self.get_up_interval_or_extent(stock, data)
+        self.stock_line_mapping[stock] = data
 
-    def serialize_data(self, data, file_path):
+    @staticmethod
+    def serialize_data(data, file_path):
         with open(file_path, 'wb') as file:
             pickle.dump(data, file)
 
     # 从本地文件加载数据并反序列化为字典
-    def deserialize_data(self, file_path):
+    @staticmethod
+    def deserialize_data(file_path):
         if not os.path.exists(file_path):
             return None
         with open(file_path, 'rb') as file:
@@ -150,17 +151,10 @@ class DataHandler:
         if data is not None:
             return data
         data = pd.read_csv(f'{self.DIR}/a_daily_base_english/{stock}.csv', header=0)
+        data['date'] = pd.to_datetime(data['date'])
         self.stock_csv_cache[stock] = data
 
         return data
-
-    # 比较耗时
-
-    def calculate_up_percent(self, day_data, row):
-        window_size = int(row['ups'])
-        ups_min = day_data.loc[int(max(0, row.name - window_size + 1)):row.name, 'low'].min()
-        ups_max = day_data.loc[int(max(0, row.name - window_size + 1)):row.name, 'high'].max()
-        day_data.loc[row.name, 'up_percent'] = (ups_max - ups_min) / ups_min
 
     def load_top_by_day(self, stock, data):
         for row in data.itertuples():

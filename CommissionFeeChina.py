@@ -1,7 +1,7 @@
 from abc import ABC
 
-from enums import SideEnum
-from my_quant import CommissionInterface
+import SideEnum
+from CommissionInterface import CommissionInterface
 
 
 class CommissionFeeChina(CommissionInterface, ABC):
