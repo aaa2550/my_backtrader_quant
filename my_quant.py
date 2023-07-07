@@ -86,22 +86,14 @@ class DataHandler:
         #     self.load_top_by_day(stock, data)
 
         for stock in datas:
+            print(stock)
             self.load_stock_line_mapping(stock)
 
         self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
         print(f'load_stock_line_mapping执行结束...')
 
-        with cf.ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(self.load_top_by_day, stock, self.stock_line_mapping.get(stock)) for stock in datas]
-            cf.wait(futures)
-        datas['代码'].apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
-
-        # for index, stock in datas.iterrows():
-        #     stock = stock['代码']
-        #     data = self.load_stock(stock)
-        #     # 计算半年内涨幅记录到每天行情
-        #     self.load_top_by_day(stock, data)
+        datas.apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
@@ -113,14 +105,9 @@ class DataHandler:
         print('数据写入缓存完成...')
 
     def load_stock_line_mapping(self, stock: str):
-        try:
-            data = self.load_stock(stock)
-            data = self.get_up_interval_or_extent(stock, data)
-            self.stock_line_mapping[stock] = data
-        except Exception as e:
-            print(repr(e))
-        finally:
-            print(stock)
+        data = self.load_stock(stock)
+        data = self.get_up_interval_or_extent(stock, data)
+        self.stock_line_mapping[stock] = data
 
     def serialize_data(self, data, file_path):
         with open(file_path, 'wb') as file:
@@ -158,6 +145,7 @@ class DataHandler:
         if data is not None:
             return data
         data = pd.read_csv(f'{self.DIR}/a_daily_base_english/{stock}.csv', header=0)
+        data['date'] = pd.to_datetime(data['date'])
         self.stock_csv_cache[stock] = data
 
         return data
@@ -180,71 +168,44 @@ class DataHandler:
         #         day_data.loc[index, 'up_percent'] = 0
         #     else:
         #         day_data.loc[index, 'up_percent'] = (up_max - up_min) / up_min
-        up_min = [0]
-        up_max = [0]
+        # min 0, max 1
+        up = [0, 0]
+
         def clac(row):
             window_size = int(row['ups'])
             low = row['low']
             high = row['high']
             if window_size == 1:
-                up_min[0] = low
-                up_max[0] = high
+                up[0] = low
+                up[1] = high
             elif window_size > 1:
-                if low < up_min[0]:
-                    up_min[0] = low
-                if high > up_max[0]:
-                    up_max[0] = high
+                if low < up[0]:
+                    up[0] = low
+                if high > up[1]:
+                    up[1] = high
             else:
                 raise Exception(f"window_size={window_size},stock={stock},row={row}")
 
-            if up_min[0] <= 0:
-                row['up_percent'] = 0
-                return
-            row['up_percent'] = (up_max[0] - up_min[0]) / up_min[0]
+            if up[0] == 0:
+                return up[1]
+            return (up[1] - up[0]) / abs(up[0])
 
-        day_data.apply(lambda row: clac(row), axis=1)
-        # for index, row in day_data.iterrows():
-        #     window_size = int(row['ups'])
-        #     low = row['low']
-        #     high = row['high']
-        #     if window_size == 1:
-        #         up_min = low
-        #         up_max = high
-        #     elif window_size > 1:
-        #         if low < up_min:
-        #             up_min = low
-        #         if high > up_max:
-        #             up_max = high
-        #     else:
-        #         raise Exception(f"window_size={window_size},stock={stock},index={index},row={row}")
-        #
-        #     if up_min <= 0:
-        #         row['up_percent'] = 0
-        #         continue
-        #     row['up_percent'] = (up_max - up_min) / up_min
+        day_data['up_percent'] = day_data.apply(lambda row: clac(row), axis=1)
 
-        day_data.to_csv(f'~/stock/a_daily_up_percent/{stock}.csv', index=False, float_format='%.15f')
+        day_data.to_csv(f'~/stock/a_daily_up_percent1/{stock}.csv', index=False, float_format='%.15f')
         day_data.set_index('date', inplace=True)
         return day_data
 
-    def calculate_up_percent(self, day_data, row):
-        window_size = int(row['ups'])
-        ups_min = day_data.loc[int(max(0, row.name - window_size + 1)):row.name, 'low'].min()
-        ups_max = day_data.loc[int(max(0, row.name - window_size + 1)):row.name, 'high'].max()
-        day_data.loc[row.name, 'up_percent'] = (ups_max - ups_min) / ups_min
-
     def load_top_by_day(self, stock, data):
-        def clac(row):
-            print(row.name)
-        data.apply(lambda row: clac(row), axis=1)
-        # for index, day_data in data.iterrows():
-        #     top_ = self.heap_top_mapping.get(index)
-        #     if day_data['up_percent'] is None:
-        #         print(f'stock:{stock},index:{index}')
-        #     if top_ is None:
-        #         top_ = []
-        #         self.heap_top_mapping[index] = top_
-        #     top_.append(Pair(stock, day_data['up_percent']))
+        print(f'load_top:{stock}')
+        for index, day_data in data.iterrows():
+            top_ = self.heap_top_mapping.get(index)
+            if day_data['up_percent'] is None:
+                print(f'stock:{stock},index:{index}')
+            if top_ is None:
+                top_ = []
+                self.heap_top_mapping[index] = top_
+            top_.append(Pair(stock, day_data['up_percent']))
 
 
 # 费率接口
@@ -366,6 +327,7 @@ class QuantBotBase(ABC):
         calendar['trade_date'] = pd.to_datetime(calendar['trade_date'])
         calendar = calendar[
             (calendar['trade_date'] >= start_time) & (True if end_time is None else calendar['trade_date'] <= end_time)]
+        calendar['trade_date'] = pd.to_datetime(calendar['trade_date'])
         self.calendar = calendar['trade_date'].tolist()
         self.stocks = self.load_stocks(stocks)
         self.open_log = open_log
@@ -412,6 +374,7 @@ class QuantBotBase(ABC):
         one_day_data = pd.DataFrame()
         for stock in self.stocks:
             stock_data = self.stock_line_mapping.get(stock)
+            print(stock_data.index.dtype)
             stock_day_data = stock_data.loc[cand]
             stock_day_data['code'] = stock
             one_day_data = one_day_data.append(stock_day_data, ignore_index=True)

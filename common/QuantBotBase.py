@@ -44,6 +44,7 @@ class QuantBotBase(ABC):
         calendar['trade_date'] = pd.to_datetime(calendar['trade_date'])
         calendar = calendar[
             (calendar['trade_date'] >= start_time) & (True if end_time is None else calendar['trade_date'] <= end_time)]
+        calendar['trade_date'] = pd.to_datetime(calendar['trade_date'])
         self.calendar = calendar['trade_date'].tolist()
         self.stocks = self.load_stocks(stocks)
         self.open_log = open_log

@@ -1,10 +1,11 @@
-from typing import Dict
-from pandas import DataFrame
-from common import Pair
-import pandas as pd
-import concurrent.futures as cf
-import pickle
 import os
+import pickle
+from typing import Dict
+
+import pandas as pd
+from pandas import DataFrame
+
+from common.Pair import Pair
 
 
 class DataHandler:
@@ -36,33 +37,15 @@ class DataHandler:
         print('重新构建数据...')
         datas = self.load_stocks()
 
-        # for index, stock in datas.iterrows():
-        #     stock = stock['代码']
-        #     print(stock)
-        #     data = self.load_stock(stock)
-        #     # 加一些扩展的列，比如移动均线
-        #     data = self.get_up_interval_or_extent(stock, data)
-        #     self.stock_line_mapping[stock] = data
-        #     # 计算半年内涨幅记录到每天行情
-        #     self.load_top_by_day(stock, data)
-
         for stock in datas:
+            print(stock)
             self.load_stock_line_mapping(stock)
 
         self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
         print(f'load_stock_line_mapping执行结束...')
 
-        with cf.ThreadPoolExecutor(max_workers=8) as executor:
-            futures = [executor.submit(self.load_top_by_day, stock, self.stock_line_mapping.get(stock)) for stock in datas]
-            cf.wait(futures)
-        datas['代码'].apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
-
-        # for index, stock in datas.iterrows():
-        #     stock = stock['代码']
-        #     data = self.load_stock(stock)
-        #     # 计算半年内涨幅记录到每天行情
-        #     self.load_top_by_day(stock, data)
+        datas.apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
@@ -72,6 +55,41 @@ class DataHandler:
         print('数据构建完成...')
         # 加载到缓存
         print('数据写入缓存完成...')
+
+    def get_up_interval_or_extent(self, stock, day_data):
+        day_data['5ma'] = day_data['close'].rolling(window=5, min_periods=5).mean()
+        day_data['20ma'] = day_data['close'].rolling(window=20, min_periods=20).mean()
+        day_data['ups'] = day_data['5ma'] > day_data['20ma']
+        day_data['ups'] = (day_data['ups'] != day_data['ups'].shift()) | (day_data['ups'] == False)
+        day_data['ups'] = day_data['ups'].cumsum()  # 辅助列，根据识别信号，对相邻的相同行为进行分组，便于计算每组相同行为的连续发生次数
+        day_data['ups'] = day_data.groupby(['ups'])['date'].rank(method='dense').astype(
+            int)  # 根据行为分组，使用窗口函数对每条行为标记连续发生次数
+
+        up = [0, 0]
+
+        def clac(row):
+            window_size = int(row['ups'])
+            low = row['low']
+            high = row['high']
+            if window_size == 1:
+                up[0] = low
+                up[1] = high
+            elif window_size > 1:
+                if low < up[0]:
+                    up[0] = low
+                if high > up[1]:
+                    up[1] = high
+            else:
+                raise Exception(f"window_size={window_size},stock={stock},row={row}")
+
+            if up[0] == 0:
+                return up[1]
+            return (up[1] - up[0]) / abs(up[0])
+
+        day_data['up_percent'] = day_data.apply(lambda row: clac(row), axis=1)
+        day_data.to_csv(f'~/stock/a_daily_up_percent1/{stock}.csv', index=False, float_format='%.15f')
+        day_data.set_index('date', inplace=True)
+        return day_data
 
     def load_stock_line_mapping(self, stock: str):
         try:
@@ -124,69 +142,6 @@ class DataHandler:
         return data
 
     # 比较耗时
-    def get_up_interval_or_extent(self, stock, day_data):
-        day_data['5ma'] = day_data['close'].rolling(window=5, min_periods=5).mean()
-        day_data['20ma'] = day_data['close'].rolling(window=20, min_periods=20).mean()
-        day_data['ups'] = day_data['5ma'] > day_data['20ma']
-        day_data['ups'] = (day_data['ups'] != day_data['ups'].shift()) | (day_data['ups'] == False)
-        day_data['ups'] = day_data['ups'].cumsum()  # 辅助列，根据识别信号，对相邻的相同行为进行分组，便于计算每组相同行为的连续发生次数
-        day_data['ups'] = day_data.groupby(['ups'])['date'].rank(method='dense').astype(
-            int)  # 根据行为分组，使用窗口函数对每条行为标记连续发生次数
-        # for index, row in day_data.iterrows():
-        #     window_size = int(row['ups'])
-        #     window_data = day_data.loc[int(max(0, index - window_size + 1)):index]
-        #     up_min = window_data['low'].min()
-        #     up_max = window_data['high'].max()
-        #     if up_min <= 0 or up_max <= 0:
-        #         day_data.loc[index, 'up_percent'] = 0
-        #     else:
-        #         day_data.loc[index, 'up_percent'] = (up_max - up_min) / up_min
-        up_min = [0]
-        up_max = [0]
-        def clac(row):
-            window_size = int(row['ups'])
-            low = row['low']
-            high = row['high']
-            if window_size == 1:
-                up_min[0] = low
-                up_max[0] = high
-            elif window_size > 1:
-                if low < up_min[0]:
-                    up_min[0] = low
-                if high > up_max[0]:
-                    up_max[0] = high
-            else:
-                raise Exception(f"window_size={window_size},stock={stock},row={row}")
-
-            if up_min[0] <= 0:
-                row['up_percent'] = 0
-                return
-            row['up_percent'] = (up_max[0] - up_min[0]) / up_min[0]
-
-        day_data.apply(lambda row: clac(row), axis=1)
-        # for index, row in day_data.iterrows():
-        #     window_size = int(row['ups'])
-        #     low = row['low']
-        #     high = row['high']
-        #     if window_size == 1:
-        #         up_min = low
-        #         up_max = high
-        #     elif window_size > 1:
-        #         if low < up_min:
-        #             up_min = low
-        #         if high > up_max:
-        #             up_max = high
-        #     else:
-        #         raise Exception(f"window_size={window_size},stock={stock},index={index},row={row}")
-        #
-        #     if up_min <= 0:
-        #         row['up_percent'] = 0
-        #         continue
-        #     row['up_percent'] = (up_max - up_min) / up_min
-
-        day_data.to_csv(f'~/stock/a_daily_up_percent/{stock}.csv', index=False, float_format='%.15f')
-        day_data.set_index('date', inplace=True)
-        return day_data
 
     def calculate_up_percent(self, day_data, row):
         window_size = int(row['ups'])
@@ -195,14 +150,11 @@ class DataHandler:
         day_data.loc[row.name, 'up_percent'] = (ups_max - ups_min) / ups_min
 
     def load_top_by_day(self, stock, data):
-        def clac(row):
-            print(row.name)
-        data.apply(lambda row: clac(row), axis=1)
-        # for index, day_data in data.iterrows():
-        #     top_ = self.heap_top_mapping.get(index)
-        #     if day_data['up_percent'] is None:
-        #         print(f'stock:{stock},index:{index}')
-        #     if top_ is None:
-        #         top_ = []
-        #         self.heap_top_mapping[index] = top_
-        #     top_.append(Pair(stock, day_data['up_percent']))
+        for index, day_data in data.iterrows():
+            top_ = self.heap_top_mapping.get(index)
+            if day_data['up_percent'] is None:
+                print(f'stock:{stock},index:{index}')
+            if top_ is None:
+                top_ = []
+                self.heap_top_mapping[index] = top_
+            top_.append(Pair(stock, day_data['up_percent']))
