@@ -37,21 +37,34 @@ class DataHandler:
         print('重新构建数据...')
         datas = self.load_stocks()
 
+        # for index, stock in datas.iterrows():
+        #     stock = stock['代码']
+        #     print(stock)
+        #     data = self.load_stock(stock)
+        #     # 加一些扩展的列，比如移动均线
+        #     data = self.get_up_interval_or_extent(stock, data)
+        #     self.stock_line_mapping[stock] = data
+        #     # 计算半年内涨幅记录到每天行情
+        #     self.load_top_by_day(stock, data)
+
         for stock in datas:
             print(stock)
             self.load_stock_line_mapping(stock)
 
-        self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
         print(f'load_stock_line_mapping执行结束...')
 
-        datas.apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
+        for stock in datas:
+            print(f'load_top:{stock}')
+            data = self.stock_line_mapping.get(stock)
+            self.load_top_by_day(stock, data)
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
             sorted_values = sorted(value, key=lambda p: p.value, reverse=True)
             self.heap_top_mapping[key] = sorted_values[:10]
 
+        self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         print('数据构建完成...')
         # 加载到缓存
         print('数据写入缓存完成...')
@@ -150,11 +163,12 @@ class DataHandler:
         day_data.loc[row.name, 'up_percent'] = (ups_max - ups_min) / ups_min
 
     def load_top_by_day(self, stock, data):
-        for index, day_data in data.iterrows():
+        for row in data.itertuples():
+            index = row.Index
             top_ = self.heap_top_mapping.get(index)
-            if day_data['up_percent'] is None:
+            if row.up_percent is None:
                 print(f'stock:{stock},index:{index}')
             if top_ is None:
                 top_ = []
                 self.heap_top_mapping[index] = top_
-            top_.append(Pair(stock, day_data['up_percent']))
+            top_.append(Pair(stock, row.up_percent))

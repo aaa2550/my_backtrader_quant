@@ -70,7 +70,6 @@ class DataHandler:
             if local_stock_line_mapping is not None:
                 self.stock_line_mapping = local_stock_line_mapping
             print('缓存加载数据完成...')
-            return
 
         print('重新构建数据...')
         datas = self.load_stocks()
@@ -85,21 +84,24 @@ class DataHandler:
         #     # 计算半年内涨幅记录到每天行情
         #     self.load_top_by_day(stock, data)
 
-        for stock in datas:
-            print(stock)
-            self.load_stock_line_mapping(stock)
-
-        self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
-        self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
+        # for stock in datas:
+        #     print(stock)
+        #     self.load_stock_line_mapping(stock)
+        #
+        # self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
         print(f'load_stock_line_mapping执行结束...')
 
-        datas.apply(lambda row: self.load_top_by_day(row, self.stock_line_mapping.get(row)))
+        for stock in datas:
+            print(f'load_top:{stock}')
+            data = self.stock_line_mapping.get(stock)
+            self.load_top_by_day(stock, data)
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
             sorted_values = sorted(value, key=lambda p: p.value, reverse=True)
             self.heap_top_mapping[key] = sorted_values[:10]
 
+        self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         print('数据构建完成...')
         # 加载到缓存
         print('数据写入缓存完成...')
@@ -197,15 +199,16 @@ class DataHandler:
         return day_data
 
     def load_top_by_day(self, stock, data):
-        print(f'load_top:{stock}')
-        for index, day_data in data.iterrows():
+        for row in data.itertuples():
+            index = row.Index
             top_ = self.heap_top_mapping.get(index)
-            if day_data['up_percent'] is None:
+            if row.up_percent is None:
                 print(f'stock:{stock},index:{index}')
             if top_ is None:
                 top_ = []
                 self.heap_top_mapping[index] = top_
-            top_.append(Pair(stock, day_data['up_percent']))
+            top_.append(Pair(stock, row.up_percent))
+
 
 
 # 费率接口
@@ -479,7 +482,7 @@ class ContinueRisingBot(QuantBotBase):
                  start_time: datetime = datetime.datetime(2000, 1, 1), end_time: datetime = None,
                  stocks: list[str] = None,
                  open_log: bool = True):
-        self.data_handler = DataHandler(use_cache=False)
+        self.data_handler = DataHandler(use_cache=True)
         super().__init__(self.data_handler.stock_line_mapping, config_path, initial_amount, start_time, end_time,
                          stocks, open_log)
 
