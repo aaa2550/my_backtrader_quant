@@ -1,13 +1,11 @@
 import datetime
-import os
-import pickle
 from typing import Dict
-
 import pandas as pd
 from pandas import DataFrame
 
+from Config import pers_path
 from Pair import Pair
-from Utils import do_percent
+from Utils import do_percent, deserialize_data, serialize_data
 
 
 class DataHandler:
@@ -21,16 +19,16 @@ class DataHandler:
     stock_csv_cache = None
     stocks = None
 
-    def __init__(self, use_cache=True, pers_path=f'/Users/yanghailong/stock/cache'):
+    def __init__(self, use_cache=True):
         self.stock_csv_cache = {}
         self.heap_top_mapping = {}
         # 是否使用缓存
         if use_cache:
             print('使用缓存数据...')
-            local_heap_top_mapping = self.deserialize_data(pers_path + '/local_heap_top_mapping.pkl')
+            local_heap_top_mapping = deserialize_data(pers_path + '/local_heap_top_mapping.pkl')
             if local_heap_top_mapping is not None:
                 self.heap_top_mapping = local_heap_top_mapping
-            local_stock_line_mapping = self.deserialize_data(pers_path + '/stock_line_mapping.pkl')
+            local_stock_line_mapping = deserialize_data(pers_path + '/stock_line_mapping.pkl')
             if local_stock_line_mapping is not None:
                 self.stock_line_mapping = local_stock_line_mapping
             print('缓存加载数据完成...')
@@ -47,7 +45,7 @@ class DataHandler:
             self.load_stock_line_mapping(stock)
             index = index + 1
 
-        self.serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
+        serialize_data(self.stock_line_mapping, pers_path + '/stock_line_mapping.pkl')
         print(f'load_stock_line_mapping耗时：{datetime.datetime.now() - start}秒')
 
         print(f'load_stock_line_mapping执行结束...')
@@ -65,7 +63,7 @@ class DataHandler:
             sorted_values = sorted(value, key=lambda p: p.value, reverse=True)
             self.heap_top_mapping[key] = sorted_values[:10]
 
-        self.serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
+        serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
         print(f'load_top_by_day耗时：{datetime.datetime.now() - start}秒')
 
         print('数据构建完成...')
@@ -112,20 +110,6 @@ class DataHandler:
         data = self.load_stock(stock)
         data = self.get_up_interval_or_extent(stock, data)
         self.stock_line_mapping[stock] = data
-
-    @staticmethod
-    def serialize_data(data, file_path):
-        with open(file_path, 'wb') as file:
-            pickle.dump(data, file)
-
-    # 从本地文件加载数据并反序列化为字典
-    @staticmethod
-    def deserialize_data(file_path):
-        if not os.path.exists(file_path):
-            return None
-        with open(file_path, 'rb') as file:
-            data = pickle.load(file)
-        return data
 
     # 获取股票代码
     def load_stocks(self):
