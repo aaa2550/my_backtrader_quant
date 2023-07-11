@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pandas import DataFrame
 
 import Utils
@@ -9,9 +11,9 @@ class ResultView:
     k_line: list[list] = None
     categoryData: list[str] = None
     vols: list[float] = None
+    other: list[list] = []
 
-    def __init__(self, datas: DataFrame, template_url: str = './template.html', out_url: str = './result.html'):
-        self.parse(datas)
+    def __init__(self, template_url: str = './template.html', out_url: str = './result.html'):
         self.template_url = template_url
         self.out_url = out_url
 
@@ -22,7 +24,11 @@ class ResultView:
         datas = datas[['open', 'high', 'low', 'close']]
         self.k_line = datas.values.tolist()
 
-    def render(self):
+    def append(self, time: datetime, amount: float, stocks: str):
+        self.other.append([time, amount, stocks])
+
+    def render(self, datas: DataFrame):
+        self.parse(datas)
         content = Utils.read(self.template_url)
         category_data = self.build_category_data()
         k_line = self.build_k_line()
@@ -36,17 +42,17 @@ class ResultView:
     def build_category_data(self):
         content = ''
         for value in self.categoryData:
-            content.append(f"'{value}',")
+            content += f"'{value}',"
         return content.removesuffix(",")
 
     def build_k_line(self):
         content = ''
         for sub_list in self.k_line:
-            content.append(f'[{sub_list[0]},{sub_list[1]},{sub_list[2]},{sub_list[3]}],')
+            content += f'[{sub_list[0]},{sub_list[1]},{sub_list[2]},{sub_list[3]}],'
         return content.removesuffix(",")
 
     def build_vols(self):
         content = ''
         for value in self.vols:
-            content.append(f"'{value}',")
+            content += f"'{value}',"
         return content.removesuffix(",")
