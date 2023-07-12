@@ -15,6 +15,7 @@ class ResultView:
     amounts: list[float] = None
     other: list[list] = []
     max_draw_down: float = 0
+    log: str = ''
 
     def __init__(self, template_url: str = './template.html', out_url: str = './result.html'):
         self.template_url = template_url
@@ -32,19 +33,17 @@ class ResultView:
         for row in datas.itertuples():
             amount = row.amount
             if max_amount is None:
-                max_amount = amount
+                max_amount = -1
             if amount > max_amount:
                 max_amount = amount
 
             temp = (max_amount - amount) / max_amount
+            print(f'amount:{amount}, max_amount:{max_amount}')
             if temp > max_draw_down:
                 max_draw_down = temp
 
         self.max_draw_down = max_draw_down
 
-
-
-        print(datas.head(30))
         self.categoryData = datas['date'].tolist()
         self.vols = datas['vlos'].tolist()
         self.amounts = datas['amount'].tolist()
@@ -62,14 +61,14 @@ class ResultView:
         k_line = self.build_k_line()
         vols = self.build_vols()
         amount = self.build_amount()
-
-        content = content.replace("#{category_data}", category_data) \
-            .replace("#{k_line}", k_line) \
+        print(f'self.max_draw_down:{self.max_draw_down}')
+        content = content.replace("#{categoryData}", category_data) \
+            .replace("#{values}", k_line) \
             .replace("#{vols}", vols) \
             .replace("#{amount}", amount) \
-            .replace("#{maxDrawDown}", str(self.max_draw_down)) \
+            .replace("#{maxDrawDown}", str(round(self.max_draw_down * 100, 2))) \
             .replace("#{initAmount}", str(init_amount)) \
-            .replace("#{lastAmount}", str(last_amount))
+            .replace("#{lastAmount}", str(round(last_amount, 2)))
 
         Utils.write(content, self.out_url)
 
@@ -96,3 +95,6 @@ class ResultView:
         for value in self.amounts:
             content += f"'{value}',"
         return content.removesuffix(",")
+
+    def append_log(self, content: str):
+        self.log += content

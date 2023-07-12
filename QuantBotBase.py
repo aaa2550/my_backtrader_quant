@@ -11,6 +11,7 @@ from pandas import DataFrame
 import CommissionInterface
 import SideEnum
 from CommissionFeeChina import CommissionFeeChina
+from Common import Side
 from Config import pers_path
 from ResultView import ResultView
 from Utils import deserialize_data, serialize_data
@@ -224,7 +225,7 @@ class QuantBotBase(ABC):
         position += buy_quantity
         self.stock_position_mapping[stock] = position
         # 记录日志
-        self.log(stock, time, price, buy_quantity, SideEnum.SideEnum.BUY, self.curr_amount, position)
+        self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, position)
 
     # 执行卖出
     def sell(self, stock: str, time: datetime, position_rate: float = 1.0):
@@ -266,7 +267,7 @@ class QuantBotBase(ABC):
 
         self.disuse.append(stock)
         # 记录日志
-        self.log(stock, time, price, sell_quantity, SideEnum.SideEnum.SELL, self.curr_amount, position)
+        self.log(stock, time, price, sell_quantity, Side.SELL, self.curr_amount, position)
 
     # 判断是否有某只股票的持仓，默认查所有持仓
     def exist_position(self, stock: str = None):
@@ -279,8 +280,9 @@ class QuantBotBase(ABC):
         for key in list(self.stock_position_mapping.keys()):
             self.sell(key, time)
 
-    def log(self, stock, time: datetime, price, quantity, side: SideEnum, currAmount: float, position: int):
+    def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, position: int):
+        content = f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}...'
+        self.result_view.append_log(content + '\n')
         if self.open_log is False:
             return
-        print(
-            f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{currAmount}...')
+        print(content)
