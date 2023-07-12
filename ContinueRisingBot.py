@@ -31,6 +31,9 @@ class ContinueRisingBot(QuantBotBase):
         #     hit = stock in [pair.key for pair in top_stocks]
         # 检查是否持仓
         if not self.exist_position(stock):  # 没有持仓
+            if self.get_position_len() >= self.max_positions:
+                return
+
             # 不是需要操作的股票则不做任何操作
             if not hit:
                 return

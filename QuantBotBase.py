@@ -275,6 +275,9 @@ class QuantBotBase(ABC):
             return self.stock_position_mapping.get(stock) is not None
         return len(self.stock_position_mapping) > 0
 
+    def get_position_len(self):
+        return len(self.stock_position_mapping)
+
     # 清空持仓
     def clean_positions(self, time: datetime):
         for key in list(self.stock_position_mapping.keys()):
