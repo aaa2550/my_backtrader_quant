@@ -1,19 +1,18 @@
 from abc import ABC, abstractmethod
+from collections import deque
 from datetime import datetime
 from math import floor
 from typing import Dict
+
 import akshare as ak
 import pandas as pd
-from pandas import DataFrame, Timestamp
-from collections import deque
+from pandas import DataFrame
 
 import CommissionInterface
+import SideEnum
 from CommissionFeeChina import CommissionFeeChina
 from Config import pers_path
-from Pair import Pair
-from Position import Position
 from ResultView import ResultView
-import SideEnum
 from Utils import deserialize_data, serialize_data
 
 
@@ -30,7 +29,7 @@ class QuantBotBase(ABC):
     # 操作的股票列表
     stocks: list[str] = None
     # 股票持仓[股票: 股数]
-    stock_position_mapping: Dict[str, Position] = {}
+    stock_position_mapping: Dict[str, int] = {}
     # 是否开启日志
     open_log: bool = True
     # 最大持仓数量
@@ -43,6 +42,7 @@ class QuantBotBase(ABC):
     disuse: deque = deque(maxlen=3)
     start_time: datetime = None
     end_time: datetime = None
+    result_view: ResultView = None
 
     def __init__(self, stock_line_mapping: Dict[str, DataFrame], config_path: str = '~/stock',
                  initial_amount: float = 10000,
@@ -69,6 +69,10 @@ class QuantBotBase(ABC):
         self.stocks = self.load_stocks(stocks)
         self.open_log = open_log
         self.load_one_cand_stocks_data()
+
+        if self.out_result:
+            self.result_view = ResultView()
+
         if open_log:
             print("构造机器人完成...")
 
@@ -103,21 +107,41 @@ class QuantBotBase(ABC):
             print("开始执行回测...")
         # 迭代每个K线
         for cand in self.calendar:
+            one_cand_data = self.one_cand_stocks_data_cache.get(cand)
+            pos_map = self.stock_position_mapping
+            # 如何开启结果展示，则追加结果信息
+            if self.out_result and len(self.stock_position_mapping) > 0:
+                self.append_result_other_datas(cand, pos_map, one_cand_data)
+
             # 走下一个k线所有的股票
-            self.next_cand_day(cand, self.one_cand_stocks_data_cache.get(cand))
+            self.next_cand_day(cand, one_cand_data)
 
         print(f'清仓开始...')
         # 清仓看最后的结果
         self.clean_positions(self.calendar[-1])
 
         if self.out_result:
-            df = ak.index_zh_a_hist(symbol="000001", period='daily',
-                                    start_date=self.start_time.strftime("%Y%m%d"),
-                                    end_date=self.end_time.strftime("%Y%m%d"))
-            df.rename(columns={'开盘': 'open', '最高': 'high', '最低': 'low', '收盘': 'close', '成交量': 'vlos',
-                               '日期': 'date'}, inplace=True)
-            result_view = ResultView()
-            result_view.render(df)
+            self.build_result_view()
+
+    def build_result_view(self):
+        df = ak.index_zh_a_hist(symbol="000001", period='daily',
+                                start_date=self.start_time.strftime("%Y%m%d"),
+                                end_date=self.end_time.strftime("%Y%m%d"))
+        df.rename(columns={'开盘': 'open', '最高': 'high', '最低': 'low', '收盘': 'close', '成交量': 'vlos',
+                           '日期': 'date'}, inplace=True)
+        self.result_view.render(df, self.initial_amount, self.curr_amount)
+
+    def append_result_other_datas(self, cand: datetime, pos_map: Dict[str, int], one_cand_data: DataFrame):
+        total_quantity = None
+        try:
+            quantity = map(
+                lambda stock:
+                one_cand_data.loc[one_cand_data.index == stock, "close"].values[0] * pos_map[stock],
+                pos_map)
+            total_quantity = sum(quantity)
+        except Exception as e:
+            pass
+        self.result_view.append_other(cand, set(pos_map.keys()), total_quantity)
 
     # 走下一个k线所有的股票
     def next_cand_day(self, cand: datetime, one_cand_data: DataFrame):
@@ -196,8 +220,8 @@ class QuantBotBase(ABC):
         # 增加持仓
         position = self.stock_position_mapping.get(stock)
         if position is None:
-            position = Position()
-        position.add_buy(pair=Pair(price, buy_quantity))
+            position = 0
+        position += buy_quantity
         self.stock_position_mapping[stock] = position
         # 记录日志
         self.log(stock, time, price, buy_quantity, SideEnum.SideEnum.BUY, self.curr_amount, position)
@@ -219,25 +243,23 @@ class QuantBotBase(ABC):
             raise ValueError(f"{stock} at {time} time failed.")
         price = stock_day_data['close']
         # 卖出数量
-        curr_quantity = position.quantity
-        sell_quantity = int(curr_quantity * position_rate / 100) * 100
+        sell_quantity = int(position * position_rate / 100) * 100
         # 如果计算后能卖出的量是0就全仓卖出
         if sell_quantity == 0:
-            sell_quantity = curr_quantity
+            sell_quantity = position
         # 卖出应得的金额金额
         sell_amount = sell_quantity * price
         # 当前余额等于卖出应得金额扣除手续费后的钱
         self.curr_amount = self.curr_amount + sell_amount - self.commission.calc(side=SideEnum.SideEnum.SELL,
                                                                                  amount=sell_amount)
         # 减掉持仓，如果卖出后没有任何持仓则del
-        curr_quantity -= sell_quantity
-        if curr_quantity < 0:
+        position -= sell_quantity
+        if position < 0:
             raise ValueError(f"{stock} at {time} sell_quantity > curr_quantity.sell_quantity={sell_quantity}, "
-                             f"curr_quantity={curr_quantity}.")
-        elif curr_quantity == 0:
+                             f"curr_quantity={position}.")
+        elif position == 0:
             del self.stock_position_mapping[stock]
         else:
-            position.quantity = curr_quantity
             self.stock_position_mapping[stock] = position
         if sell_quantity == 0:
             print(sell_quantity)
@@ -257,8 +279,8 @@ class QuantBotBase(ABC):
         for key in list(self.stock_position_mapping.keys()):
             self.sell(key, time)
 
-    def log(self, stock, time: datetime, price, quantity, side: SideEnum, currAmount: float, position: Position):
+    def log(self, stock, time: datetime, price, quantity, side: SideEnum, currAmount: float, position: int):
         if self.open_log is False:
             return
         print(
-            f'[{time}]{side}:{stock},价格:{price},数量:{quantity},余额:{currAmount},净利润:{position.get_net_profit()}...')
+            f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{currAmount}...')

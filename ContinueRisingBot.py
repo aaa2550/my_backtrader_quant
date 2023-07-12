@@ -13,7 +13,7 @@ class ContinueRisingBot(QuantBotBase):
     data_handler: DataHandler = None
 
     def __init__(self, config_path: str = '~/stock', initial_amount: float = 1000000,
-                 start_time: datetime = datetime.datetime(2000, 1, 1),
+                 start_time: datetime = datetime.datetime(2010, 1, 1),
                  end_time: datetime = datetime.datetime(2023, 6, 19),
                  stocks: list[str] = None, open_log: bool = True, use_cache=True,
                  commission: CommissionInterface = CommissionFeeChina(), bot_use_cache: bool = True,
@@ -36,7 +36,6 @@ class ContinueRisingBot(QuantBotBase):
                 return
             # 否则买入
             if stock_datas[stock_datas.index >= time]['low'].min() <= 0:
-                print(f"被遗弃的票{stock}")
                 return
 
             self.buy(stock, time)
