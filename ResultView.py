@@ -23,7 +23,7 @@ class ResultView:
     def parse(self, datas: DataFrame):
         datas = datas.reindex(columns=['open', 'high', 'low', 'close', 'vlos', 'date'])
         other_datas = pd.DataFrame(self.other, columns=['date', 'stocks', 'amount'])
-        datas = pd.to_datetime(datas['date'])
+        datas['date'] = pd.to_datetime(datas['date'])
         datas = pd.merge(datas, other_datas, on="date", how="left")
         datas['amount'].fillna(method='ffill', inplace=True)
 
@@ -67,9 +67,9 @@ class ResultView:
             .replace("#{k_line}", k_line) \
             .replace("#{vols}", vols) \
             .replace("#{amount}", amount) \
-            .replace("#{maxDrawDown}", self.max_draw_down) \
-            .replace("#{initAmount}", init_amount) \
-            .replace("#{lastAmount}", last_amount)
+            .replace("#{maxDrawDown}", str(self.max_draw_down)) \
+            .replace("#{initAmount}", str(init_amount)) \
+            .replace("#{lastAmount}", str(last_amount))
 
         Utils.write(content, self.out_url)
 
