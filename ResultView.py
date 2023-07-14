@@ -15,6 +15,7 @@ class ResultView:
     amounts: list[float] = None
     other: list[list] = []
     max_draw_down: float = 0
+    stocks: list[str] = None
     log: str = ''
 
     def __init__(self, template_url: str = './template.html', out_url: str = './result.html'):
@@ -38,7 +39,6 @@ class ResultView:
                 max_amount = amount
 
             temp = (max_amount - amount) / max_amount
-            print(f'amount:{amount}, max_amount:{max_amount}')
             if temp > max_draw_down:
                 max_draw_down = temp
 
@@ -47,6 +47,7 @@ class ResultView:
         self.categoryData = datas['date'].tolist()
         self.vols = datas['vlos'].tolist()
         self.amounts = datas['amount'].tolist()
+        self.stocks = datas['stocks'].tolist()
 
         datas = datas[['open', 'high', 'low', 'close']]
         self.k_line = datas.values.tolist()
@@ -61,6 +62,7 @@ class ResultView:
         k_line = self.build_k_line()
         vols = self.build_vols()
         amount = self.build_amount()
+        stocks = self.build_stocks()
         print(f'self.max_draw_down:{self.max_draw_down}')
         content = content.replace("#{categoryData}", category_data) \
             .replace("#{values}", k_line) \
@@ -68,7 +70,9 @@ class ResultView:
             .replace("#{amount}", amount) \
             .replace("#{maxDrawDown}", str(round(self.max_draw_down * 100, 2))) \
             .replace("#{initAmount}", str(init_amount)) \
-            .replace("#{lastAmount}", str(round(last_amount, 2)))
+            .replace("#{lastAmount}", str(round(last_amount, 2))) \
+            .replace("#{stocks}", stocks) \
+            .replace("#{log}", self.log)
 
         Utils.write(content, self.out_url)
 
@@ -96,5 +100,11 @@ class ResultView:
             content += f"'{value}',"
         return content.removesuffix(",")
 
+    def build_stocks(self):
+        content = ''
+        for value in self.stocks:
+            content += f"'{value}',"
+        return content.removesuffix(",")
+
     def append_log(self, content: str):
-        self.log += content
+        self.log += content + '<br>'

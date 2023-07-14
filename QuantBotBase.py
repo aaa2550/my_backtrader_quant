@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import floor
 from typing import Dict
 
@@ -44,8 +44,9 @@ class QuantBotBase(ABC):
     start_time: datetime = None
     end_time: datetime = None
     result_view: ResultView = None
+    stock_up_date_map: dict[str: datetime] = None
 
-    def __init__(self, stock_line_mapping: Dict[str, DataFrame], config_path: str = '~/stock',
+    def __init__(self, stock_up_date_map: dict[str: datetime], stock_line_mapping: Dict[str, DataFrame], config_path: str = '~/stock',
                  initial_amount: float = 10000,
                  start_time: datetime = None, end_time: datetime = None, stocks: list[str] = None,
                  open_log: bool = True, out_result: bool = True, commission: CommissionInterface = CommissionFeeChina(),
@@ -60,6 +61,7 @@ class QuantBotBase(ABC):
         self.max_positions = max_positions
         self.start_time = start_time
         self.end_time = end_time
+        self.stock_up_date_map = stock_up_date_map
         calendar = ak.tool_trade_date_hist_sina()
         calendar['trade_date'] = pd.to_datetime(calendar['trade_date'])
         calendar = calendar[
@@ -110,12 +112,13 @@ class QuantBotBase(ABC):
         for cand in self.calendar:
             one_cand_data = self.one_cand_stocks_data_cache.get(cand)
             pos_map = self.stock_position_mapping
+            total_position_amount = None
             # 如何开启结果展示，则追加结果信息
             if self.out_result and len(self.stock_position_mapping) > 0:
-                self.append_result_other_datas(cand, pos_map, one_cand_data)
+                total_position_amount = self.append_result_other_datas(cand, pos_map, one_cand_data)
 
             # 走下一个k线所有的股票
-            self.next_cand_day(cand, one_cand_data)
+            self.next_cand_day(cand, one_cand_data, total_position_amount)
 
         print(f'清仓开始...')
         # 清仓看最后的结果
@@ -133,32 +136,38 @@ class QuantBotBase(ABC):
         self.result_view.render(df, self.initial_amount, self.curr_amount)
 
     def append_result_other_datas(self, cand: datetime, pos_map: Dict[str, int], one_cand_data: DataFrame):
-        total_quantity = None
+        total_position_amount = None
         try:
-            quantity = map(
+            position_amount = map(
                 lambda stock:
                 one_cand_data.loc[one_cand_data.index == stock, "close"].values[0] * pos_map[stock],
                 pos_map)
-            total_quantity = sum(quantity)
+            total_position_amount = sum(position_amount)
         except Exception as e:
             pass
-        self.result_view.append_other(cand, set(pos_map.keys()), total_quantity)
+        if total_position_amount is not None:
+            total_position_amount += self.curr_amount
+        self.result_view.append_other(cand, set(pos_map.keys()), total_position_amount)
+        return total_position_amount
 
     # 走下一个k线所有的股票
-    def next_cand_day(self, cand: datetime, one_cand_data: DataFrame):
+    def next_cand_day(self, cand: datetime, one_cand_data: DataFrame, total_position_amount: float):
         if one_cand_data is None:
             print(f"居然没有:{cand}")
             return
         for row in one_cand_data.itertuples():
             index = row.Index
-            self.next(cand, row, index, self.stock_line_mapping.get(index))
+            up_date = self.stock_up_date_map.get(index)
+            if up_date is not None and (cand - up_date) <= timedelta(days=60):
+                continue
+            self.next(cand, row, index, self.stock_line_mapping.get(index), total_position_amount)
 
     # cand  k线日历
     # one_cand_stock 行数据
     # stock 股票代码
     # stock_datas 当前股票所有数据
     @abstractmethod
-    def next(self, cand: datetime, row, stock: str, stock_datas: DataFrame = None):
+    def next(self, cand: datetime, row, stock: str, stock_datas: DataFrame = None, total_position_amount: float = None):
         pass
 
     # 取出当前k线所有的股票并构建一个新的pd
@@ -178,18 +187,20 @@ class QuantBotBase(ABC):
         return one_day_data
 
     # 执行买入
-    def buy(self, stock: str, time: datetime, position_rate: float = 1.0):
+    def buy(self, stock: str, time: datetime, total_position_amount: float, position_rate: float = 1.0):
         # 全仓时为1，不能大于1
         if position_rate > 1:
             position_rate = 1
         # 获取股票k线
         stock_data = self.stock_line_mapping.get(stock)
         # 取出当前k线
-        stock_cand_data = stock_data.loc[time]
+        stock_cand_data = stock_data.loc[time].shift(1)
         if stock_cand_data is None:
             raise ValueError(f"{stock} at {time} time failed.")
 
         price = stock_cand_data['close']
+        if stock_cand_data['up_percent'] > 1 and stock_cand_data['open'] == stock_cand_data['close']:
+            return
         if price <= 2:
             return
         # 计算当前余额一共能买的总量
@@ -200,7 +211,7 @@ class QuantBotBase(ABC):
             return
         # 买入的金额
         buy_amount = buy_quantity * price
-        commission_fee = self.commission.calc(side=SideEnum.SideEnum.BUY, amount=buy_amount)
+        commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
         # 加手续费后需要扣除的总金额
         need_deduct_amount = buy_amount + commission_fee
         # 如果扣除手续费后金额不够的话就减掉100股
@@ -212,7 +223,7 @@ class QuantBotBase(ABC):
             if buy_quantity < 100:
                 return
             buy_amount = buy_quantity * price
-            commission_fee = self.commission.calc(side=SideEnum.SideEnum.BUY, amount=buy_amount)
+            commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
             need_deduct_amount = buy_amount + commission_fee
             if self.curr_amount < need_deduct_amount:
                 return
@@ -225,10 +236,10 @@ class QuantBotBase(ABC):
         position += buy_quantity
         self.stock_position_mapping[stock] = position
         # 记录日志
-        self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, position)
+        self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, position, total_position_amount)
 
     # 执行卖出
-    def sell(self, stock: str, time: datetime, position_rate: float = 1.0):
+    def sell(self, stock: str, time: datetime, total_position_amount: float, position_rate: float = 1.0):
         # 全仓时为1，不能大于1
         if position_rate > 1:
             position_rate = 1
@@ -239,10 +250,12 @@ class QuantBotBase(ABC):
         # 获取K线
         stock_data = self.stock_line_mapping.get(stock)
         # 获取当天k线
-        stock_day_data = stock_data.loc[time]
-        if stock_day_data is None:
+        stock_cand_data = stock_data.loc[time].shift(1)
+        if stock_cand_data is None:
             raise ValueError(f"{stock} at {time} time failed.")
-        price = stock_day_data['close']
+        price = stock_cand_data['close']
+        if stock_cand_data['open'] == stock_cand_data['close']:
+            return
         # 卖出数量
         sell_quantity = int(position * position_rate / 100) * 100
         # 如果计算后能卖出的量是0就全仓卖出
@@ -251,7 +264,7 @@ class QuantBotBase(ABC):
         # 卖出应得的金额金额
         sell_amount = sell_quantity * price
         # 当前余额等于卖出应得金额扣除手续费后的钱
-        self.curr_amount = self.curr_amount + sell_amount - self.commission.calc(side=SideEnum.SideEnum.SELL,
+        self.curr_amount = self.curr_amount + sell_amount - self.commission.calc(side=Side.SELL,
                                                                                  amount=sell_amount)
         # 减掉持仓，如果卖出后没有任何持仓则del
         position -= sell_quantity
@@ -267,7 +280,7 @@ class QuantBotBase(ABC):
 
         self.disuse.append(stock)
         # 记录日志
-        self.log(stock, time, price, sell_quantity, Side.SELL, self.curr_amount, position)
+        self.log(stock, time, price, sell_quantity, Side.SELL, self.curr_amount, position, total_position_amount)
 
     # 判断是否有某只股票的持仓，默认查所有持仓
     def exist_position(self, stock: str = None):
@@ -279,13 +292,15 @@ class QuantBotBase(ABC):
         return len(self.stock_position_mapping)
 
     # 清空持仓
-    def clean_positions(self, time: datetime):
+    def clean_positions(self, time: datetime, total_position_amount: float = None):
         for key in list(self.stock_position_mapping.keys()):
-            self.sell(key, time)
+            self.sell(key, time, total_position_amount)
 
-    def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, position: int):
-        content = f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}...'
-        self.result_view.append_log(content + '\n')
+    def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, position: int
+            , total_position_amount: float):
+        content = f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}' \
+                  f',总持仓金额:{round(total_position_amount, 2) if total_position_amount else None}'
+        self.result_view.append_log(content)
         if self.open_log is False:
             return
         print(content)

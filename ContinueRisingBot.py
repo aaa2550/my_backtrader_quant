@@ -19,11 +19,11 @@ class ContinueRisingBot(QuantBotBase):
                  commission: CommissionInterface = CommissionFeeChina(), bot_use_cache: bool = True,
                  max_positions: int = 1):
         self.data_handler = DataHandler(use_cache=use_cache)
-        super().__init__(stock_line_mapping=self.data_handler.stock_line_mapping, config_path=config_path,
+        super().__init__(stock_up_date_map=self.data_handler.stock_up_date_map, stock_line_mapping=self.data_handler.stock_line_mapping, config_path=config_path,
                          initial_amount=initial_amount, start_time=start_time, end_time=end_time, stocks=stocks,
                          open_log=open_log, commission=commission, use_cache=bot_use_cache, max_positions=max_positions)
 
-    def next(self, time: datetime, row, stock: str, stock_datas: DataFrame = None):
+    def next(self, time: datetime, row, stock: str, stock_datas: DataFrame = None, total_position_amount: float = None):
         top_stocks = self.data_handler.heap_top_mapping.get(time)
         first_stock = next((stock.key for stock in top_stocks[:self.disuse.maxlen] if stock.key not in self.disuse), None)
         hit = first_stock == stock
@@ -41,7 +41,7 @@ class ContinueRisingBot(QuantBotBase):
             if stock_datas[stock_datas.index >= time]['low'].min() <= 0:
                 return
 
-            self.buy(stock, time)
+            self.buy(stock, time, total_position_amount)
         elif self.exist_position(stock):  # 否则如果当前的股票在持仓列表当中
             # 取30日最高价
             days_max_price = stock_datas.loc[time - pd.DateOffset(days=30):time, 'high'].max()
@@ -49,7 +49,7 @@ class ContinueRisingBot(QuantBotBase):
             decline_percent = (days_max_price - row.close) / days_max_price
             # 如果大于15%卖出一半，如果大于20%全仓卖出
             if 0.15 < decline_percent < 0.2:
-                self.sell(stock, time, 0.5)
+                self.sell(stock, time, total_position_amount, 0.5)
             elif decline_percent > 0.2:
-                self.sell(stock, time, 1)
+                self.sell(stock, time, total_position_amount, 1)
 

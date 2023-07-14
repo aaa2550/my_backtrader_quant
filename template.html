@@ -54,13 +54,6 @@
       padding: 0;
       margin: 0;
     }
-
-    /* 日志项样式 */
-    .log-item {
-      margin-bottom: 5px;
-      font-size: 14px;
-      color: #333;
-    }
   </style>
 </head>
 
@@ -85,9 +78,7 @@
   <div id="log-section">
     <h3>日志</h3>
     <ul class="log-list">
-      <li class="log-item">状态：正常</li>
-      <li class="log-item">提醒：无</li>
-      <li class="log-item">操作记录：无</li>
+        #{log}
     </ul>
   </div>
 
@@ -102,11 +93,13 @@
       var values = [#{values}];
       var vols = [#{vols}];
       var amount = [#{amount}];
+      var stocks = [#{stocks}];
       return {
         categoryData: categoryData,
         values: values,
         vols: vols,
-        amount: amount
+        amount: amount,
+        stocks: stocks
       };
     }
 
@@ -309,6 +302,16 @@
         name: '收益',
         type: 'line',
         data: data0.amount,
+        smooth: true,
+        lineStyle: {
+          normal: {
+            opacity: 0.5
+          }
+        }
+      }, {
+        name: 'stocks',
+        type: 'line',
+        data: data0.stocks,
         smooth: true,
         lineStyle: {
           normal: {

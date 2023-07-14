@@ -17,11 +17,13 @@ class DataHandler:
     stock_line_mapping: Dict[str, DataFrame] = {}
     # 缓存股票的csv避免重复load影响性能
     stock_csv_cache = None
+    stock_up_date_map: dict[str: datetime] = None
     stocks = None
 
     def __init__(self, use_cache=True):
         self.stock_csv_cache = {}
         self.heap_top_mapping = {}
+        self.load_stock_up_date_map()
         # 是否使用缓存
         if use_cache:
             print('使用缓存数据...')
@@ -150,3 +152,8 @@ class DataHandler:
                 top_ = []
                 self.heap_top_mapping[index] = top_
             top_.append(Pair(stock, row.up_percent))
+
+    def load_stock_up_date_map(self):
+        data = pd.read_csv(f'{self.DIR}/date.csv', header=0)
+        data['date'] = pd.to_datetime(data['date'])
+        self.stock_up_date_map = data.set_index('stock')['date'].to_dict()
