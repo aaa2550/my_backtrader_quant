@@ -103,7 +103,11 @@ class ResultView:
     def build_stocks(self):
         content = ''
         for value in self.stocks:
-            content += f"'{value}',"
+            if isinstance(value, float):
+                content += f"'{value}',"
+            else:
+                str_ = ','.join([str(item) for item in value])
+                content += f"'{str_}',"
         return content.removesuffix(",")
 
     def append_log(self, content: str):

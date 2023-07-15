@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 from collections import deque
 from datetime import datetime, timedelta
@@ -194,12 +195,19 @@ class QuantBotBase(ABC):
         # 获取股票k线
         stock_data = self.stock_line_mapping.get(stock)
         # 取出当前k线
-        stock_cand_data = stock_data.loc[time].shift(1)
+        # stock_cand_data = stock_data.iloc[stock_data.index.get_loc(time) + 1]
+        # if stock_cand_data is None:
+        #     raise ValueError(f"{stock} at {time} time failed.")
+        #
+        # price = stock_cand_data['open']
+        stock_cand_data = stock_data.loc[time]
         if stock_cand_data is None:
             raise ValueError(f"{stock} at {time} time failed.")
 
         price = stock_cand_data['close']
         if stock_cand_data['up_percent'] > 1 and stock_cand_data['open'] == stock_cand_data['close']:
+            return
+        if math.isnan(price):
             return
         if price <= 2:
             return
@@ -250,10 +258,16 @@ class QuantBotBase(ABC):
         # 获取K线
         stock_data = self.stock_line_mapping.get(stock)
         # 获取当天k线
-        stock_cand_data = stock_data.loc[time].shift(1)
+        # stock_cand_data = stock_data.iloc[stock_data.index.get_loc(time) + 1]
+        # if stock_cand_data is None:
+        #     raise ValueError(f"{stock} at {time} time failed.")
+        # price = stock_cand_data['open']
+        stock_cand_data = stock_data.loc[time]
         if stock_cand_data is None:
             raise ValueError(f"{stock} at {time} time failed.")
         price = stock_cand_data['close']
+        if math.isnan(price):
+            return
         if stock_cand_data['open'] == stock_cand_data['close']:
             return
         # 卖出数量
@@ -298,7 +312,7 @@ class QuantBotBase(ABC):
 
     def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, position: int
             , total_position_amount: float):
-        content = f'[{time}]{side}:{stock},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}' \
+        content = f'[{time}]{side}:{stock},乘价:{price * quantity},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}' \
                   f',总持仓金额:{round(total_position_amount, 2) if total_position_amount else None}'
         self.result_view.append_log(content)
         if self.open_log is False:

@@ -48,8 +48,10 @@ class ContinueRisingBot(QuantBotBase):
             # 收盘价站最高价下降百分比
             decline_percent = (days_max_price - row.close) / days_max_price
             # 如果大于15%卖出一半，如果大于20%全仓卖出
-            if 0.15 < decline_percent < 0.2:
-                self.sell(stock, time, total_position_amount, 0.5)
-            elif decline_percent > 0.2:
+            if decline_percent > 0.05:
                 self.sell(stock, time, total_position_amount, 1)
+            # if 0.15 < decline_percent < 0.2:
+            #     self.sell(stock, time, total_position_amount, 0.5)
+            # elif decline_percent > 0.2:
+            #     self.sell(stock, time, total_position_amount, 1)
 

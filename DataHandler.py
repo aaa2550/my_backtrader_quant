@@ -142,6 +142,19 @@ class DataHandler:
 
         return data
 
+    # 只判断持续上涨，不判断最后上涨照最高点下降了多少百分比
+    # def load_top_by_day(self, stock, data):
+    #     for row in data.itertuples():
+    #         index = row.Index
+    #         top_ = self.heap_top_mapping.get(index)
+    #         if row.up_percent is None:
+    #             print(f'stock:{stock},index:{index}')
+    #         if top_ is None:
+    #             top_ = []
+    #             self.heap_top_mapping[index] = top_
+    #         top_.append(Pair(stock, row.up_percent))
+
+    # 判断持续上涨，并限制最后一天照最高点下降了的百分比
     def load_top_by_day(self, stock, data):
         for row in data.itertuples():
             index = row.Index
