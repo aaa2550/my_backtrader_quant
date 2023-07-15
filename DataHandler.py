@@ -5,6 +5,7 @@ from pandas import DataFrame
 
 from Config import pers_path
 from Pair import Pair
+from Triple import Triple
 from Utils import do_percent, deserialize_data, serialize_data
 
 
@@ -13,7 +14,7 @@ class DataHandler:
     DIR = '~/stock'
     PERIOD = 120
     # 按日期每天存top的股票
-    heap_top_mapping: Dict[str, list[Pair]] = {}
+    heap_top_mapping: Dict[str, list[Triple]] = {}
     stock_line_mapping: Dict[str, DataFrame] = {}
     # 缓存股票的csv避免重复load影响性能
     stock_csv_cache = None
@@ -43,6 +44,7 @@ class DataHandler:
         index = 0
         start = datetime.datetime.now()
         for stock in datas:
+            print(f'load_stock_line_mapping:{stock}')
             do_percent(index, count, 'load_stock_line_mapping')
             self.load_stock_line_mapping(stock)
             index = index + 1
@@ -55,6 +57,7 @@ class DataHandler:
         start = datetime.datetime.now()
         index = 0
         for stock in datas:
+            print(f'stock_line_mapping:{stock}')
             do_percent(index, count, 'load_top_by_day')
             data = self.stock_line_mapping.get(stock)
             self.load_top_by_day(stock, data)
@@ -62,7 +65,9 @@ class DataHandler:
 
         # 半年内涨幅排序后保留top10
         for key, value in self.heap_top_mapping.items():
-            sorted_values = sorted(value, key=lambda p: p.value, reverse=True)
+            sorted_values = sorted(value, key=lambda p: p.middle, reverse=True)
+            # 限制最后一天照最高点下降了的百分比
+            # sorted_values = [item for item in sorted_values if item.right > 0.05]
             self.heap_top_mapping[key] = sorted_values[:10]
 
         serialize_data(self.heap_top_mapping, pers_path + '/local_heap_top_mapping.pkl')
@@ -82,12 +87,14 @@ class DataHandler:
         day_data['ups'] = day_data.groupby(['ups'])['date'].rank(method='dense').astype(
             int)  # 根据行为分组，使用窗口函数对每条行为标记连续发生次数
 
-        up = [0, 0]
+        up = [0, 0, 0]
 
         def clac(row):
             window_size = int(row['ups'])
             low = row['low']
             high = row['high']
+            close = row['close']
+            down_rate = 100
             if window_size == 1:
                 up[0] = low
                 up[1] = high
@@ -96,15 +103,19 @@ class DataHandler:
                     up[0] = low
                 if high > up[1]:
                     up[1] = high
+                if up[1] == 0:
+                    down_rate = 100
+                else:
+                    down_rate = (up[1] - close) / up[1]
             else:
                 raise Exception(f"window_size={window_size},stock={stock},row={row}")
 
             if up[0] == 0:
-                return up[1]
-            return (up[1] - up[0]) / abs(up[0])
+                return up[1], down_rate
+            return (up[1] - up[0]) / abs(up[0]), down_rate
 
-        day_data['up_percent'] = day_data.apply(lambda row: clac(row), axis=1)
-        day_data.to_csv(f'~/stock/a_daily_up_percent1/{stock}.csv', index=False, float_format='%.15f')
+        day_data[['up_percent', 'down_rate']] = day_data.apply(lambda row: clac(row), axis=1, result_type='expand')
+        day_data.to_csv(f'~/stock/a_daily_up_percent/{stock}.csv', index=False, float_format='%.15f')
         day_data.set_index('date', inplace=True)
         return day_data
 
@@ -142,19 +153,6 @@ class DataHandler:
 
         return data
 
-    # 只判断持续上涨，不判断最后上涨照最高点下降了多少百分比
-    # def load_top_by_day(self, stock, data):
-    #     for row in data.itertuples():
-    #         index = row.Index
-    #         top_ = self.heap_top_mapping.get(index)
-    #         if row.up_percent is None:
-    #             print(f'stock:{stock},index:{index}')
-    #         if top_ is None:
-    #             top_ = []
-    #             self.heap_top_mapping[index] = top_
-    #         top_.append(Pair(stock, row.up_percent))
-
-    # 判断持续上涨，并限制最后一天照最高点下降了的百分比
     def load_top_by_day(self, stock, data):
         for row in data.itertuples():
             index = row.Index
@@ -164,7 +162,8 @@ class DataHandler:
             if top_ is None:
                 top_ = []
                 self.heap_top_mapping[index] = top_
-            top_.append(Pair(stock, row.up_percent))
+            top_.append(Triple(stock, row.up_percent, row.down_rate))
+
 
     def load_stock_up_date_map(self):
         data = pd.read_csv(f'{self.DIR}/date.csv', header=0)

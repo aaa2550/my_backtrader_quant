@@ -25,7 +25,7 @@ class ContinueRisingBot(QuantBotBase):
 
     def next(self, time: datetime, row, stock: str, stock_datas: DataFrame = None, total_position_amount: float = None):
         top_stocks = self.data_handler.heap_top_mapping.get(time)
-        first_stock = next((stock.key for stock in top_stocks[:self.disuse.maxlen] if stock.key not in self.disuse), None)
+        first_stock = next((stock.left for stock in top_stocks[:self.disuse.maxlen] if stock.left not in self.disuse), None)
         hit = first_stock == stock
         # if top_stocks is not None:
         #     hit = stock in [pair.key for pair in top_stocks]
@@ -48,7 +48,7 @@ class ContinueRisingBot(QuantBotBase):
             # 收盘价站最高价下降百分比
             decline_percent = (days_max_price - row.close) / days_max_price
             # 如果大于15%卖出一半，如果大于20%全仓卖出
-            if decline_percent > 0.05:
+            if decline_percent > 0.2:
                 self.sell(stock, time, total_position_amount, 1)
             # if 0.15 < decline_percent < 0.2:
             #     self.sell(stock, time, total_position_amount, 0.5)
