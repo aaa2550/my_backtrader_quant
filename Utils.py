@@ -24,9 +24,14 @@ def do_percent(index, count, key: str = ""):
 
 
 def serialize_data(data, file_path):
+    # Create the directory if it doesn't exist
+    directory = os.path.dirname(file_path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # Serialize data to the specified file
     with open(file_path, 'wb') as file:
         pickle.dump(data, file)
-
 
 # 从本地文件加载数据并反序列化为字典
 def deserialize_data(file_path):

@@ -13,7 +13,7 @@ class ContinueRisingBot(QuantBotBase):
     data_handler: DataHandler = None
 
     def __init__(self, config_path: str = '~/stock', initial_amount: float = 1000000,
-                 start_time: datetime = datetime.datetime(2010, 1, 1),
+                 start_time: datetime = datetime.datetime(2015, 1, 1),
                  end_time: datetime = datetime.datetime(2023, 6, 19),
                  stocks: list[str] = None, open_log: bool = True, use_cache=True,
                  commission: CommissionInterface = CommissionFeeChina(), bot_use_cache: bool = True,
@@ -48,10 +48,10 @@ class ContinueRisingBot(QuantBotBase):
             # 收盘价站最高价下降百分比
             decline_percent = (days_max_price - row.close) / days_max_price
             # 如果大于15%卖出一半，如果大于20%全仓卖出
-            if decline_percent > 0.2:
-                self.sell(stock, time, total_position_amount, 1)
-            # if 0.15 < decline_percent < 0.2:
-            #     self.sell(stock, time, total_position_amount, 0.5)
-            # elif decline_percent > 0.2:
+            # if decline_percent > 0.2:
             #     self.sell(stock, time, total_position_amount, 1)
+            if 0.15 < decline_percent < 0.2:
+                self.sell(stock, time, total_position_amount, 0.5)
+            elif decline_percent > 0.2:
+                self.sell(stock, time, total_position_amount, 1)
 
