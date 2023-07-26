@@ -78,8 +78,9 @@ class DataHandler:
 
     @staticmethod
     def get_up_interval_or_extent(stock, day_data):
-        day_data['5ma'] = day_data['close'].rolling(window=5, min_periods=5).mean()
-        day_data['20ma'] = day_data['close'].rolling(window=20, min_periods=20).mean()
+        day_data['5ma'] = day_data['close'].rolling(window=5, min_periods=1).mean()
+        day_data['10ma'] = day_data['close'].rolling(window=10, min_periods=1).mean()
+        day_data['20ma'] = day_data['close'].rolling(window=20, min_periods=1).mean()
         day_data['ups'] = day_data['5ma'] > day_data['20ma']
         day_data['ups'] = (day_data['ups'] != day_data['ups'].shift()) | (day_data['ups'] == False)
         day_data['ups'] = day_data['ups'].cumsum()  # 辅助列，根据识别信号，对相邻的相同行为进行分组，便于计算每组相同行为的连续发生次数

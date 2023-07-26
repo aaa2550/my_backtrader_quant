@@ -10,7 +10,6 @@ import pandas as pd
 from pandas import DataFrame
 
 import CommissionInterface
-import SideEnum
 from CommissionFeeChina import CommissionFeeChina
 from Common import Side
 from Config import pers_path
@@ -40,7 +39,7 @@ class QuantBotBase(ABC):
     commission: CommissionInterface = None
     one_cand_stocks_data_cache: Dict[datetime, DataFrame] = {}
     out_result: bool = True
-    use_cache: bool = True
+    use_cache: bool = False
     disuse: deque = deque(maxlen=3)
     start_time: datetime = None
     end_time: datetime = None
@@ -141,7 +140,7 @@ class QuantBotBase(ABC):
         try:
             position_amount = map(
                 lambda stock:
-                one_cand_data.loc[one_cand_data.index == stock, "close"].values[0] * pos_map[stock],
+                one_cand_data.loc[one_cand_data.index == stock, "close"].values[0] * pos_map[stock]['amount'],
                 pos_map)
             total_position_amount = sum(position_amount)
         except Exception as e:
@@ -209,42 +208,51 @@ class QuantBotBase(ABC):
             return
         if math.isnan(price):
             return
-        if price <= 2:
-            return
-        # 计算当前余额一共能买的总量
-        can_buy_total_quantity = floor(self.curr_amount / price)
-        # A股最少买100股，并且股数要是100的整数
-        buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
-        if buy_quantity < 100:
-            return
-        # 买入的金额
-        buy_amount = buy_quantity * price
-        commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
-        # 加手续费后需要扣除的总金额
-        need_deduct_amount = buy_amount + commission_fee
-        # 如果扣除手续费后金额不够的话就减掉100股
-        if self.curr_amount < need_deduct_amount:
-            if buy_quantity <= 100:
-                return
-            can_buy_total_quantity = floor((self.curr_amount - commission_fee) / price)
+        # if price <= 2:
+        #     return
+
+        ma5 = stock_cand_data.loc['5ma']
+        ma10 = stock_cand_data.loc['10ma']
+        ma20 = stock_cand_data.loc['20ma']
+        # 52 周最高价
+        days_max_price = stock_data.loc[time - pd.DateOffset(weeks=52):time, 'high'].max()
+        close = stock_cand_data['close']
+        margin = stock_cand_data.loc['margin']
+        diff = (close / days_max_price) - 1
+        if (ma5 > ma10) and margin > 2 and close > ma5 and (close >= days_max_price or diff < -0.15):
+            # 计算当前余额一共能买的总量
+            can_buy_total_quantity = floor(self.curr_amount / price)
+            # A股最少买100股，并且股数要是100的整数
             buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
             if buy_quantity < 100:
                 return
+            # 买入的金额
             buy_amount = buy_quantity * price
             commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
+            # 加手续费后需要扣除的总金额
             need_deduct_amount = buy_amount + commission_fee
+            # 如果扣除手续费后金额不够的话就减掉100股
             if self.curr_amount < need_deduct_amount:
-                return
-        # 余额扣除花费的金额
-        self.curr_amount -= (buy_amount + commission_fee)
-        # 增加持仓
-        position = self.stock_position_mapping.get(stock)
-        if position is None:
-            position = 0
-        position += buy_quantity
-        self.stock_position_mapping[stock] = position
-        # 记录日志
-        self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, position, total_position_amount)
+                if buy_quantity <= 100:
+                    return
+                can_buy_total_quantity = floor((self.curr_amount - commission_fee) / price)
+                buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
+                if buy_quantity < 100:
+                    return
+                buy_amount = buy_quantity * price
+                commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
+                need_deduct_amount = buy_amount + commission_fee
+                if self.curr_amount < need_deduct_amount:
+                    return
+            # 余额扣除花费的金额
+            self.curr_amount -= (buy_amount + commission_fee)
+            # 增加持仓
+            position = self.stock_position_mapping.get(stock)
+            amount = position['amount'] if position is not None else 0
+            amount += buy_quantity
+            self.stock_position_mapping[stock] = {'amount': amount, 'price': price}
+            # 记录日志
+            self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, amount, total_position_amount)
 
     # 执行卖出
     def sell(self, stock: str, time: datetime, total_position_amount: float, position_rate: float = 1.0):
@@ -255,6 +263,8 @@ class QuantBotBase(ABC):
         position = self.stock_position_mapping.get(stock)
         if position is None:
             return
+
+        amount = position['amount']
         # 获取K线
         stock_data = self.stock_line_mapping.get(stock)
         # 获取当天k线
@@ -271,21 +281,21 @@ class QuantBotBase(ABC):
         if stock_cand_data['open'] == stock_cand_data['close']:
             return
         # 卖出数量
-        sell_quantity = int(position * position_rate / 100) * 100
+        sell_quantity = int(amount * position_rate / 100) * 100
         # 如果计算后能卖出的量是0就全仓卖出
         if sell_quantity == 0:
-            sell_quantity = position
+            sell_quantity = amount
         # 卖出应得的金额金额
         sell_amount = sell_quantity * price
         # 当前余额等于卖出应得金额扣除手续费后的钱
         self.curr_amount = self.curr_amount + sell_amount - self.commission.calc(side=Side.SELL,
                                                                                  amount=sell_amount)
         # 减掉持仓，如果卖出后没有任何持仓则del
-        position -= sell_quantity
-        if position < 0:
+        amount -= sell_quantity
+        if amount < 0:
             raise ValueError(f"{stock} at {time} sell_quantity > curr_quantity.sell_quantity={sell_quantity}, "
-                             f"curr_quantity={position}.")
-        elif position == 0:
+                             f"curr_quantity={amount}.")
+        elif amount == 0:
             del self.stock_position_mapping[stock]
         else:
             self.stock_position_mapping[stock] = position
@@ -294,7 +304,7 @@ class QuantBotBase(ABC):
 
         self.disuse.append(stock)
         # 记录日志
-        self.log(stock, time, price, sell_quantity, Side.SELL, self.curr_amount, position, total_position_amount)
+        self.log(stock, time, price, sell_quantity, Side.SELL, self.curr_amount, amount, total_position_amount)
 
     # 判断是否有某只股票的持仓，默认查所有持仓
     def exist_position(self, stock: str = None):
@@ -310,9 +320,9 @@ class QuantBotBase(ABC):
         for key in list(self.stock_position_mapping.keys()):
             self.sell(key, time, total_position_amount)
 
-    def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, position: int
+    def log(self, stock, time: datetime, price, quantity, side: Side, currAmount: float, amount: int
             , total_position_amount: float):
-        content = f'[{time}]{side}:{stock},乘价:{price * quantity},价格:{price},数量:{quantity},账户总数量:{position},余额:{round(currAmount, 2)}' \
+        content = f'[{time}]{side}:{stock},乘价:{price * quantity},价格:{price},数量:{quantity},账户总数量:{amount},余额:{round(currAmount, 2)}' \
                   f',总持仓金额:{round(total_position_amount, 2) if total_position_amount else None}'
         self.result_view.append_log(content)
         if self.open_log is False:

@@ -2,7 +2,7 @@ from ContinueRisingBot import ContinueRisingBot
 
 
 def main():
-    bot = ContinueRisingBot(max_positions=5, use_cache=True)
+    bot = ContinueRisingBot(max_positions=10, use_cache=True)
     bot.run()
 
 
