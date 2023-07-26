@@ -89,7 +89,8 @@ class DataHandler:
 
         up = [0, 0, 0]
 
-        def clac(row):
+        # 上涨了多少天和离最高点跌幅
+        def up_percent_and_down_rate(row):
             window_size = int(row['ups'])
             low = row['low']
             high = row['high']
@@ -114,8 +115,7 @@ class DataHandler:
                 return up[1], down_rate
             return (up[1] - up[0]) / abs(up[0]), down_rate
 
-        day_data[['up_percent', 'down_rate']] = day_data.apply(lambda row: clac(row), axis=1, result_type='expand')
-        day_data.to_csv(f'~/stock/a_daily_up_percent/{stock}.csv', index=False, float_format='%.15f')
+        day_data[['up_percent', 'down_rate']] = day_data.apply(lambda row: up_percent_and_down_rate(row), axis=1, result_type='expand')
         day_data.set_index('date', inplace=True)
         return day_data
 
