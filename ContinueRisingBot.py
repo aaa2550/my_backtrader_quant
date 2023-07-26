@@ -39,7 +39,20 @@ class ContinueRisingBot(QuantBotBase):
             if stock_datas[stock_datas.index >= time]['low'].min() <= 0:
                 return
 
-            self.buy(stock, time, total_position_amount)
+            # 5、10、20均线
+            ma5 = row._11
+            ma10 = row._12
+            ma20 = row._13
+            # 52 周最高价
+            days_max_price = stock_datas.loc[time - pd.DateOffset(weeks=52):time, 'high'].max()
+            close = row.close
+            margin = row.margin
+            #当天涨幅超过10% 为涨停板
+            if margin >= 10:
+                return
+            diff = (close / days_max_price) - 1
+            if ma5 > ma10 and margin > 2 and close > ma5 and (close >= days_max_price or diff < -0.15):
+                self.buy(stock, time, total_position_amount)
         elif self.exist_position(stock):  # 否则如果当前的股票在持仓列表当中
             # 获取K线
             position = self.stock_position_mapping.get(stock)
@@ -57,10 +70,13 @@ class ContinueRisingBot(QuantBotBase):
             # 趋势为多头继续持有
             if row.close > ma5:
                 return
-
             # 现价 / 成本
             decline_percent = (row.close / buyin_price) - 1
-            if decline_percent <= -0.05: #跌幅超过5%卖出
+
+            # 购买当日的开盘价为卖出信号
+            if row.close < position['low']:
+                self.sell(stock, time, total_position_amount, 1)
+            elif decline_percent <= -0.05: #跌幅超过5%卖出
                 self.sell(stock, time, total_position_amount, 1)
             elif decline_percent >= 0.1: # 盈利超过15% 卖出
                 self.sell(stock, time, total_position_amount, 1)

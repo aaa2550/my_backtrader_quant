@@ -211,49 +211,39 @@ class QuantBotBase(ABC):
         # if price <= 2:
         #     return
 
-        ma5 = stock_cand_data.loc['5ma']
-        ma10 = stock_cand_data.loc['10ma']
-        ma20 = stock_cand_data.loc['20ma']
-        # 52 周最高价
-        days_max_price = stock_data.loc[time - pd.DateOffset(weeks=52):time, 'high'].max()
-        close = stock_cand_data['close']
-        margin = stock_cand_data.loc['margin']
-        diff = (close / days_max_price) - 1
-        if (ma5 > ma10) and margin > 2 and close > ma5 and (close >= days_max_price or diff < -0.15):
-            # 计算当前余额一共能买的总量
-            can_buy_total_quantity = floor(self.curr_amount / price)
-            # A股最少买100股，并且股数要是100的整数
+        # 计算当前余额一共能买的总量
+        can_buy_total_quantity = floor(self.curr_amount / price)
+        # A股最少买100股，并且股数要是100的整数
+        buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
+        if buy_quantity < 100:
+            return
+        # 买入的金额
+        buy_amount = buy_quantity * price
+        commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
+        # 加手续费后需要扣除的总金额
+        need_deduct_amount = buy_amount + commission_fee
+        # 如果扣除手续费后金额不够的话就减掉100股
+        if self.curr_amount < need_deduct_amount:
+            if buy_quantity <= 100:
+                return
+            can_buy_total_quantity = floor((self.curr_amount - commission_fee) / price)
             buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
             if buy_quantity < 100:
                 return
-            # 买入的金额
             buy_amount = buy_quantity * price
             commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
-            # 加手续费后需要扣除的总金额
             need_deduct_amount = buy_amount + commission_fee
-            # 如果扣除手续费后金额不够的话就减掉100股
             if self.curr_amount < need_deduct_amount:
-                if buy_quantity <= 100:
-                    return
-                can_buy_total_quantity = floor((self.curr_amount - commission_fee) / price)
-                buy_quantity = int(can_buy_total_quantity * position_rate // 100) * 100
-                if buy_quantity < 100:
-                    return
-                buy_amount = buy_quantity * price
-                commission_fee = self.commission.calc(side=Side.BUY, amount=buy_amount)
-                need_deduct_amount = buy_amount + commission_fee
-                if self.curr_amount < need_deduct_amount:
-                    return
-            # 余额扣除花费的金额
-            self.curr_amount -= (buy_amount + commission_fee)
-            # 增加持仓
-            position = self.stock_position_mapping.get(stock)
-            amount = position['amount'] if position is not None else 0
-            amount += buy_quantity
-            self.stock_position_mapping[stock] = {'amount': amount, 'price': price}
-            # 记录日志
-            self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, amount, total_position_amount)
-
+                return
+        # 余额扣除花费的金额
+        self.curr_amount -= (buy_amount + commission_fee)
+        # 增加持仓
+        position = self.stock_position_mapping.get(stock)
+        amount = position['amount'] if position is not None else 0
+        amount += buy_quantity
+        self.stock_position_mapping[stock] = {'amount': amount, 'price': price, 'low': stock_cand_data['open']}
+        # 记录日志
+        self.log(stock, time, price, buy_quantity, Side.BUY, self.curr_amount, amount, total_position_amount)
     # 执行卖出
     def sell(self, stock: str, time: datetime, total_position_amount: float, position_rate: float = 1.0):
         # 全仓时为1，不能大于1
